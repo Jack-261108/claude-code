@@ -5,6 +5,7 @@ import { mock, describe, expect, test } from "bun:test";
 // Do NOT mock common/shared modules (zod/v4, bootstrap/state, etc.) to avoid
 // corrupting the module cache for other test files in the same Bun process.
 
+const emittedProgressEvents: any[] = [];
 const noop = () => {};
 
 mock.module("bun:bundle", () => ({ feature: () => false }));
@@ -130,11 +131,18 @@ mock.module("src/utils/permissions/yoloClassifier.js", () => ({
 }));
 
 mock.module("src/utils/task/sdkProgress.js", () => ({
-  emitTaskProgress: noop,
+  emitTaskProgress: (event: any) => {
+    emittedProgressEvents.push(event);
+  },
 }));
 
 mock.module("src/utils/tokens.js", () => ({
-  getTokenCountFromUsage: () => 0,
+  getTokenUsage: (message: any) => message?.message?.usage,
+  getTokenCountFromUsage: (usage: any) =>
+    (usage?.input_tokens ?? 0) +
+    (usage?.cache_creation_input_tokens ?? 0) +
+    (usage?.cache_read_input_tokens ?? 0) +
+    (usage?.output_tokens ?? 0),
 }));
 
 mock.module("src/tools/ExitPlanModeTool/constants.js", () => ({
@@ -164,7 +172,9 @@ mock.module("src/tools/AgentTool/AgentTool.tsx", () => ({
 
 const {
   countToolUses,
+  emitTaskProgress,
   getLastToolUseName,
+  resolveAgentTotalTokens,
 } = await import("../agentToolUtils");
 
 function makeAssistantMessage(content: any[]): any {
@@ -215,6 +225,93 @@ describe("countToolUses", () => {
       ]),
     ];
     expect(countToolUses(messages)).toBe(3);
+  });
+});
+
+describe("resolveAgentTotalTokens", () => {
+  test("emits progress with resolved token fallback when final usage is zero", () => {
+    emittedProgressEvents.length = 0;
+    const tracker = {
+      toolUseCount: 2,
+      latestInputTokens: 0,
+      cumulativeOutputTokens: 21,
+      recentActivities: [],
+    };
+    const messages = [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "step 1" }],
+          usage: { input_tokens: 8, output_tokens: 4 },
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", name: "Read" }],
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      },
+    ];
+
+    emitTaskProgress(
+      tracker,
+      "task-1",
+      undefined,
+      "desc",
+      0,
+      "Read",
+      messages,
+    );
+
+    expect(emittedProgressEvents).toHaveLength(1);
+    expect(emittedProgressEvents[0].totalTokens).toBe(12);
+  });
+
+  test("prefers final assistant usage when it is positive", () => {
+    const messages = [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "done" }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      },
+    ];
+    expect(resolveAgentTotalTokens(messages, 3)).toBe(15);
+  });
+
+  test("falls back to earlier positive assistant usage when final usage is zero", () => {
+    const messages = [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "step 1" }],
+          usage: { input_tokens: 8, output_tokens: 4 },
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "done" }],
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      },
+    ];
+    expect(resolveAgentTotalTokens(messages, 3)).toBe(12);
+  });
+
+  test("falls back to tracker token count when all assistant usage is zero", () => {
+    const messages = [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "done" }],
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      },
+    ];
+    expect(resolveAgentTotalTokens(messages, 21)).toBe(21);
   });
 });
 

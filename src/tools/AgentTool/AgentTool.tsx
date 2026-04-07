@@ -96,6 +96,7 @@ import {
   extractPartialResult,
   finalizeAgentTool,
   getLastToolUseName,
+  resolveAgentTotalTokens,
   runAsyncAgentLifecycle,
 } from './agentToolUtils.js'
 import { GENERAL_PURPOSE_AGENT } from './built-in/generalPurposeAgent.js'
@@ -1280,6 +1281,7 @@ export const AgentTool = buildTool({
                             description,
                             startTime,
                             lastToolName,
+                            agentMessages,
                           )
                         }
                       }
@@ -1287,6 +1289,7 @@ export const AgentTool = buildTool({
                         agentMessages,
                         backgroundedTaskId,
                         metadata,
+                        getTokenCountFromTracker(tracker),
                       )
 
                       // Mark task completed FIRST so TaskOutput(block=true)
@@ -1328,7 +1331,7 @@ export const AgentTool = buildTool({
                         setAppState: rootSetAppState,
                         finalMessage,
                         usage: {
-                          totalTokens: getTokenCountFromTracker(tracker),
+                          totalTokens: agentResult.totalTokens,
                           toolUses: agentResult.totalToolUseCount,
                           durationMs: agentResult.totalDurationMs,
                         },
@@ -1438,6 +1441,7 @@ export const AgentTool = buildTool({
                     description,
                     agentStartTime,
                     lastToolName,
+                    agentMessages,
                   )
                   // Keep AppState task.progress in sync when SDK summaries are
                   // enabled, so updateAgentSummary reads correct token/tool counts
@@ -1552,6 +1556,10 @@ export const AgentTool = buildTool({
               // NOT trigger the print.ts XML task_notification parser or the LLM loop.
               if (!wasBackgrounded) {
                 const progress = getProgressUpdate(syncTracker)
+                const totalTokens = resolveAgentTotalTokens(
+                  agentMessages,
+                  progress.tokenCount,
+                )
                 enqueueSdkEvent({
                   type: 'system',
                   subtype: 'task_notification',
@@ -1565,7 +1573,7 @@ export const AgentTool = buildTool({
                   output_file: '',
                   summary: description,
                   usage: {
-                    total_tokens: progress.tokenCount,
+                    total_tokens: totalTokens,
                     tool_uses: progress.toolUseCount,
                     duration_ms: Date.now() - agentStartTime,
                   },
@@ -1637,6 +1645,7 @@ export const AgentTool = buildTool({
             agentMessages,
             syncAgentId,
             metadata,
+            getTokenCountFromTracker(syncTracker),
           )
 
           if (feature('TRANSCRIPT_CLASSIFIER')) {

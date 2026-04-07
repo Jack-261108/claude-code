@@ -653,12 +653,6 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Preferred language for Claude responses and voice dictation (e.g., "japanese", "spanish")',
         ),
-      skipWebFetchPreflight: z
-        .boolean()
-        .optional()
-        .describe(
-          'Skip the WebFetch blocklist check for enterprise environments with restrictive security policies',
-        ),
       sandbox: SandboxSettingsSchema().optional(),
       feedbackSurveyRate: z
         .number()

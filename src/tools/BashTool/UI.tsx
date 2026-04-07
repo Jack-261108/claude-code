@@ -73,6 +73,21 @@ export function BackgroundHint({
   )
 }
 
+export function renderMultilineCommandLines(
+  command: string,
+  dimColor = false,
+): React.ReactNode {
+  return (
+    <Box flexDirection="column">
+      {command.split('\n').map((line, index) => (
+        <Text key={`bash-command-line-${index}`} dimColor={dimColor}>
+          {line || ' '}
+        </Text>
+      ))}
+    </Box>
+  )
+}
+
 export function renderToolUseMessage(
   input: Partial<BashToolInput>,
   { verbose, theme: _theme }: { verbose: boolean; theme: ThemeName },
@@ -103,21 +118,24 @@ export function renderToolUseMessage(
     const needsLineTruncation = lines.length > MAX_COMMAND_DISPLAY_LINES
     const needsCharTruncation = command.length > MAX_COMMAND_DISPLAY_CHARS
 
-    if (needsLineTruncation || needsCharTruncation) {
-      let truncated = command
+    let display = command
+    let wasTruncated = false
 
-      // First truncate by lines if needed
-      if (needsLineTruncation) {
-        truncated = lines.slice(0, MAX_COMMAND_DISPLAY_LINES).join('\n')
-      }
-
-      // Then truncate by chars if still too long
-      if (truncated.length > MAX_COMMAND_DISPLAY_CHARS) {
-        truncated = truncated.slice(0, MAX_COMMAND_DISPLAY_CHARS)
-      }
-
-      return <Text>{truncated.trim()}…</Text>
+    if (needsLineTruncation) {
+      display = lines.slice(0, MAX_COMMAND_DISPLAY_LINES).join('\n')
+      wasTruncated = true
     }
+
+    if (display.length > MAX_COMMAND_DISPLAY_CHARS) {
+      display = display.slice(0, MAX_COMMAND_DISPLAY_CHARS)
+      wasTruncated = true
+    }
+
+    if (wasTruncated) {
+      display = `${display.trim()}…`
+    }
+
+    return display
   }
 
   return command

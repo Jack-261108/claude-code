@@ -40,8 +40,11 @@ export function AgentProgressLine({
 }: Props): React.ReactNode {
   const treeChar = isLast ? '└─' : '├─'
   const isBackgrounded = isAsync && isResolved
+  const headerLabel = hideType ? (name ?? description ?? agentType) : agentType
+  const statsText = !isBackgrounded
+    ? `${toolUseCount} tool ${toolUseCount === 1 ? 'use' : 'uses'}${tokens !== null ? ` · ${formatNumber(tokens)} tokens` : ''}`
+    : null
 
-  // Determine the status text
   const getStatusText = (): string => {
     if (!isResolved) {
       return lastToolInfo || 'Initializing…'
@@ -53,51 +56,58 @@ export function AgentProgressLine({
   }
 
   return (
-    <Box flexDirection="column">
-      <Box paddingLeft={3}>
+    <Box flexDirection="column" width="100%">
+      <Box paddingLeft={3} width="100%" flexDirection="row">
         <Text dimColor>{treeChar} </Text>
-        <Text dimColor={!isResolved}>
-          {hideType ? (
-            <>
-              <Text bold>{name ?? description ?? agentType}</Text>
-              {name && description && <Text dimColor>: {description}</Text>}
-            </>
-          ) : (
-            <>
-              <Text
-                bold
-                backgroundColor={color}
-                color={color ? 'inverseText' : undefined}
-              >
-                {agentType}
+        <Box flexDirection="row" flexGrow={1} flexShrink={1} minWidth={0}>
+          <Box flexShrink={1} minWidth={0}>
+            <Text
+              bold
+              wrap="truncate-end"
+              backgroundColor={!hideType ? color : undefined}
+              color={!hideType && color ? 'inverseText' : undefined}
+            >
+              {headerLabel}
+            </Text>
+          </Box>
+          {hideType && name && description ? (
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-end">
+                : {description}
               </Text>
-              {description && (
-                <>
-                  {' ('}
-                  <Text
-                    backgroundColor={descriptionColor}
-                    color={descriptionColor ? 'inverseText' : undefined}
-                  >
-                    {description}
-                  </Text>
-                  {')'}
-                </>
-              )}
-            </>
-          )}
-          {!isBackgrounded && (
-            <>
-              {' · '}
-              {toolUseCount} tool {toolUseCount === 1 ? 'use' : 'uses'}
-              {tokens !== null && <> · {formatNumber(tokens)} tokens</>}
-            </>
-          )}
-        </Text>
+            </Box>
+          ) : !hideType && description ? (
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-end">
+                {' ('}
+                <Text
+                  backgroundColor={descriptionColor}
+                  color={descriptionColor ? 'inverseText' : undefined}
+                >
+                  {description}
+                </Text>
+                {')'}
+              </Text>
+            </Box>
+          ) : null}
+          {statsText ? (
+            <Box flexShrink={1} minWidth={0}>
+              <Text dimColor wrap="truncate-end">
+                {' · '}
+                {statsText}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>
       </Box>
       {!isBackgrounded && (
-        <Box paddingLeft={3} flexDirection="row">
+        <Box paddingLeft={3} flexDirection="row" width="100%">
           <Text dimColor>{isLast ? '   ⎿  ' : '│  ⎿  '}</Text>
-          <Text dimColor>{getStatusText()}</Text>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text dimColor wrap="truncate-end">
+              {getStatusText()}
+            </Text>
+          </Box>
         </Box>
       )}
     </Box>

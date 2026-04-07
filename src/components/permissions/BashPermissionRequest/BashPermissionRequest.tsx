@@ -11,6 +11,7 @@ import {
 import { sanitizeToolNameForAnalytics } from '../../../services/analytics/metadata.js'
 import { useAppState } from '../../../state/AppState.js'
 import { BashTool } from '../../../tools/BashTool/BashTool.js'
+import { renderMultilineCommandLines } from '../../../tools/BashTool/UI.js'
 import {
   getFirstWordPrefix,
   getSimpleCommandPrefix,
@@ -516,12 +517,7 @@ function BashPermissionRequestInner({
       subtitle={classifierSubtitle}
     >
       <Box flexDirection="column" paddingX={2} paddingY={1}>
-        <Text dimColor={explainerState.visible}>
-          {BashTool.renderToolUseMessage(
-            { command, description },
-            { theme, verbose: true }, // always show the full command
-          )}
-        </Text>
+        {renderMultilineCommandLines(command, explainerState.visible)}
         {!explainerState.visible && (
           <Text dimColor>{toolUseConfirm.description}</Text>
         )}

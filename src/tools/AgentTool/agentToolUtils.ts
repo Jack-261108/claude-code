@@ -55,7 +55,7 @@ import {
 } from '../../utils/permissions/yoloClassifier.js'
 import { emitTaskProgress as emitTaskProgressEvent } from '../../utils/task/sdkProgress.js'
 import { isInProcessTeammate } from '../../utils/teammateContext.js'
-import { getTokenCountFromUsage } from '../../utils/tokens.js'
+import { getTokenCountFromUsage, getTokenUsage } from '../../utils/tokens.js'
 import { EXIT_PLAN_MODE_V2_TOOL_NAME } from '../ExitPlanModeTool/constants.js'
 import { AGENT_TOOL_NAME, LEGACY_AGENT_TOOL_NAME } from './constants.js'
 import type { AgentDefinition } from './loadAgentsDir.js'
@@ -274,6 +274,43 @@ export function countToolUses(messages: MessageType[]): number {
   return count
 }
 
+export function resolveAgentTotalTokens(
+  agentMessages: MessageType[],
+  trackerTokenCount?: number,
+): number {
+  const lastAssistantMessage = getLastAssistantMessage(agentMessages)
+  const lastAssistantUsage = lastAssistantMessage
+    ? getTokenUsage(lastAssistantMessage)
+    : undefined
+  const lastAssistantTokens = lastAssistantUsage
+    ? getTokenCountFromUsage(lastAssistantUsage)
+    : undefined
+
+  if (typeof lastAssistantTokens === 'number' && lastAssistantTokens > 0) {
+    return lastAssistantTokens
+  }
+
+  let latestPositiveUsageTokens: number | undefined
+  for (let i = agentMessages.length - 1; i >= 0; i--) {
+    const message = agentMessages[i]
+    const usage = message ? getTokenUsage(message) : undefined
+    if (!usage) {
+      continue
+    }
+    const tokenCount = getTokenCountFromUsage(usage)
+    if (tokenCount > 0) {
+      latestPositiveUsageTokens = tokenCount
+      break
+    }
+  }
+
+  return Math.max(
+    lastAssistantTokens ?? 0,
+    latestPositiveUsageTokens ?? 0,
+    trackerTokenCount ?? 0,
+  )
+}
+
 export function finalizeAgentTool(
   agentMessages: MessageType[],
   agentId: string,
@@ -285,6 +322,7 @@ export function finalizeAgentTool(
     agentType: string
     isAsync: boolean
   },
+  trackerTokenCount?: number,
 ): AgentToolResult {
   const {
     prompt,
@@ -317,7 +355,7 @@ export function finalizeAgentTool(
     }
   }
 
-  const totalTokens = getTokenCountFromUsage(lastAssistantMessage.message?.usage as Parameters<typeof getTokenCountFromUsage>[0])
+  const totalTokens = resolveAgentTotalTokens(agentMessages, trackerTokenCount)
   const totalToolUseCount = countToolUses(agentMessages)
 
   logEvent('tengu_agent_tool_completed', {
@@ -374,14 +412,18 @@ export function emitTaskProgress(
   description: string,
   startTime: number,
   lastToolName: string,
+  agentMessages?: MessageType[],
 ): void {
   const progress = getProgressUpdate(tracker)
+  const totalTokens = agentMessages
+    ? resolveAgentTotalTokens(agentMessages, progress.tokenCount)
+    : progress.tokenCount
   emitTaskProgressEvent({
     taskId,
     toolUseId,
     description: progress.lastActivity?.activityDescription ?? description,
     startTime,
-    totalTokens: progress.tokenCount,
+    totalTokens,
     toolUses: progress.toolUseCount,
     lastToolName,
   })
@@ -589,13 +631,19 @@ export async function runAsyncAgentLifecycle({
           description,
           metadata.startTime,
           lastToolName,
+          agentMessages,
         )
       }
     }
 
     stopSummarization?.()
 
-    const agentResult = finalizeAgentTool(agentMessages, taskId, metadata)
+    const agentResult = finalizeAgentTool(
+      agentMessages,
+      taskId,
+      metadata,
+      getTokenCountFromTracker(tracker),
+    )
 
     // Mark task completed FIRST so TaskOutput(block=true) unblocks
     // immediately. classifyHandoffIfNeeded (API call) and getWorktreeResult
@@ -629,7 +677,7 @@ export async function runAsyncAgentLifecycle({
       setAppState: rootSetAppState,
       finalMessage,
       usage: {
-        totalTokens: getTokenCountFromTracker(tracker),
+        totalTokens: agentResult.totalTokens,
         toolUses: agentResult.totalToolUseCount,
         durationMs: agentResult.totalDurationMs,
       },
