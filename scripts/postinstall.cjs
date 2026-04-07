@@ -94,6 +94,28 @@ function getBinaryPath() {
   return path.resolve(dir, subdir, binary)
 }
 
+function getCliEntrypoint() {
+  return path.resolve(projectRoot, "dist", "cli.js")
+}
+
+function ensureCliEntrypointReady() {
+  const cliEntrypoint = getCliEntrypoint()
+  if (!existsSync(cliEntrypoint)) {
+    console.warn(`[postinstall] CLI entrypoint not found at ${cliEntrypoint}`)
+    return
+  }
+
+  const bunCommand = process.platform === "win32" ? "bun.exe" : "bun"
+  const bunCheck = spawnSync(bunCommand, ["--version"], {
+    stdio: "ignore",
+    windowsHide: true,
+  })
+
+  if (bunCheck.status !== 0) {
+    console.warn("[postinstall] Bun runtime not found in PATH. Global install will finish, but the CLI requires Bun to run.")
+  }
+}
+
 // --- Download helpers ---
 
 function proxyEnvSet() {
@@ -307,6 +329,7 @@ async function downloadAndExtract() {
 }
 
 async function main() {
+  ensureCliEntrypointReady()
   await downloadAndExtract()
 }
 

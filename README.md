@@ -39,6 +39,36 @@ ccb # 直接打开 claude code
 DEFAULT_RELEASE_BASE=https://ghproxy.net/https://github.com/microsoft/ripgrep-prebuilt/releases/download/v15.0.1
 ```
 
+## ⚡ GitHub Releases / Homebrew
+
+### GitHub Releases
+
+发布页会提供 macOS 的完整运行时压缩包：
+
+- `ccb-v<version>-darwin-arm64.tar.gz`
+- `ccb-v<version>-darwin-x64.tar.gz`
+- `SHA256SUMS`
+
+解压后可直接运行包内的 `bin/ccb`。
+包内若缺少 ripgrep，会在首次运行时自动补下载。
+也可以直接使用仓库中的 `bun run package:release` 生成 release tarball、`SHA256SUMS` 和 Homebrew formula。
+
+### Homebrew
+
+第一阶段采用独立 tap 分发，主仓库会在 release 发布后自动向 tap 仓库创建 formula 更新 PR。
+安装方式示例：
+
+```bash
+brew tap claude-code-best/homebrew-claude-code-best
+brew install claude-code-best
+```
+
+> 当前 Homebrew / Release 方案仍依赖 Bun 运行时；formula 会声明 Bun 依赖。
+> 自动同步到 tap 仓库需要配置 `HOMEBREW_TAP_TOKEN`，并默认以 PR 形式更新，不会直接推送 tap 主分支。
+> 同一 release tag 的 tap 同步 workflow 会串行化执行；若 PR 创建、更新或 auto-merge 失败，可直接查看 workflow summary 获取恢复信息。
+> 也可通过手动触发 workflow_dispatch 并选择 `sync_mode=auto-merge-only` 或 `summary-only` 做恢复。
+> 仓库 CI 还会通过仓库内脚本校验 `.github/workflows/*.yml`；release workflow 会列出真实发布产物名并上传 `manifest.json`，tap sync workflow 会读取该 manifest 来生成同步说明、PR / auto-merge / 恢复 summary。
+
 ## ⚡ 快速开始(源码版)
 
 ### ⚙️ 环境要求

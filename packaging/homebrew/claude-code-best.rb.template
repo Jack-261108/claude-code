@@ -1,0 +1,29 @@
+class ClaudeCodeBest < Formula
+  desc "Reverse-engineered Anthropic Claude Code CLI"
+  homepage "https://github.com/claude-code-best/claude-code"
+  version "__VERSION__"
+  depends_on "bun"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/claude-code-best/claude-code/releases/download/v__VERSION__/ccb-v__VERSION__-darwin-arm64.tar.gz"
+      sha256 "__SHA256_DARWIN_ARM64__"
+    else
+      url "https://github.com/claude-code-best/claude-code/releases/download/v__VERSION__/ccb-v__VERSION__-darwin-x64.tar.gz"
+      sha256 "__SHA256_DARWIN_X64__"
+    end
+  end
+
+  def install
+    libexec.install Dir["*"]
+    root = libexec.children.find(&:directory?)
+    raise "release root directory missing" unless root
+    bin.install_symlink root/"bin/ccb"
+    bin.install_symlink root/"bin/claude-code-best"
+  end
+
+  test do
+    output = shell_output("#{bin}/ccb --version")
+    assert_match "Claude Code", output
+  end
+end

@@ -1,8 +1,10 @@
-import { readdir, readFile, writeFile, cp } from 'fs/promises'
+import { readdir, readFile, writeFile, cp, chmod } from 'fs/promises'
 import { join } from 'path'
 import { getMacroDefines } from './scripts/defines.ts'
 
 const outdir = 'dist'
+const cliEntrypoint = join(outdir, 'cli.js')
+const CLI_SHEBANG = '#!/usr/bin/env bun'
 
 // Step 1: Clean output directory
 const { rmSync } = await import('fs')
@@ -79,12 +81,26 @@ console.log(
   `Bundled ${result.outputs.length} files to ${outdir}/ (patched ${patched} for Node.js compat)`,
 )
 
-// Step 4: Copy native .node addon files (audio-capture)
+// Step 4: Stabilize CLI entrypoint for npm global installs
+const cliContent = await readFile(cliEntrypoint, 'utf-8')
+const normalizedCliContent = cliContent.startsWith(`${CLI_SHEBANG}\n`)
+  ? cliContent
+  : cliContent.replace(/^#!.*\n/, '')
+const nextCliContent = normalizedCliContent.startsWith(`${CLI_SHEBANG}\n`)
+  ? normalizedCliContent
+  : `${CLI_SHEBANG}\n${normalizedCliContent}`
+if (nextCliContent !== cliContent) {
+  await writeFile(cliEntrypoint, nextCliContent)
+}
+await chmod(cliEntrypoint, 0o755)
+console.log(`Stabilized CLI entrypoint at ${cliEntrypoint}`)
+
+// Step 5: Copy native .node addon files (audio-capture)
 const vendorDir = join(outdir, 'vendor', 'audio-capture')
 await cp('vendor/audio-capture', vendorDir, { recursive: true })
 console.log(`Copied vendor/audio-capture/ → ${vendorDir}/`)
 
-// Step 5: Bundle download-ripgrep script as standalone JS for postinstall
+// Step 6: Bundle download-ripgrep script as standalone JS for postinstall
 const rgScript = await Bun.build({
   entrypoints: ['scripts/download-ripgrep.ts'],
   outdir,

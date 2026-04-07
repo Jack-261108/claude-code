@@ -39,10 +39,12 @@
   ],
   "scripts": {
     "build": "bun run build.ts",
+    "package:release": "bun run scripts/package-release.ts",
     "dev": "bun run scripts/dev.ts",
     "dev:inspect": "bun run scripts/dev-debug.ts",
-    "prepublishOnly": "bun run build",
+    "prepack": "bun run build",
     "lint": "biome lint src/",
+    "lint:workflow": "bun run scripts/actionlint.ts",
     "lint:fix": "biome lint --fix src/",
     "format": "biome format --write src/",
     "prepare": "git config core.hooksPath .githooks",

@@ -1,0 +1,317 @@
+name: Sync Homebrew Tap
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to sync (e.g. v1.1.0)
+        required: false
+      sync_mode:
+        description: Manual recovery mode
+        required: false
+        default: full
+        type: choice
+        options:
+          - full
+          - auto-merge-only
+          - summary-only
+
+concurrency:
+  group: sync-homebrew-tap-${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync-homebrew-tap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    env:
+      TAP_REPOSITORY: claude-code-best/homebrew-claude-code-best
+      TAP_DEFAULT_BRANCH: main
+      TAP_FORMULA_PATH: Formula/claude-code-best.rb
+      TAP_BRANCH_PREFIX: sync/claude-code
+      SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.sync_mode || 'full' }}
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref }}
+
+      - name: Resolve release version
+        id: version
+        run: |
+          tag="${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "branch=${TAP_BRANCH_PREFIX}/${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release manifest
+        if: env.SYNC_MODE == 'full'
+        id: manifest
+        timeout-minutes: 3
+        run: |
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern manifest.json \
+            --dir release-manifest
+          node <<'EOF'
+          const fs = require('fs')
+          const manifest = JSON.parse(fs.readFileSync('release-manifest/manifest.json', 'utf8'))
+          const artifacts = Array.isArray(manifest.artifacts) ? manifest.artifacts.join(',') : ''
+          if (manifest.version !== '${{ steps.version.outputs.version }}') {
+            throw new Error(`Manifest version ${manifest.version} does not match release version ${{ steps.version.outputs.version }}`)
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `formula_file=${manifest.formulaFile}\n`)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `checksums_file=${manifest.checksumsFile}\n`)
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `artifacts=${artifacts}\n`)
+          EOF
+
+      - name: Validate formula exists
+        if: env.SYNC_MODE == 'full'
+        timeout-minutes: 2
+        run: test -f "${{ steps.manifest.outputs.formula_file }}"
+
+      - name: Checkout tap repository
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_REPOSITORY }}
+          ref: ${{ env.TAP_DEFAULT_BRANCH }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap-repo
+
+      - name: Copy formula into tap repository
+        if: env.SYNC_MODE == 'full'
+        timeout-minutes: 2
+        run: |
+          mkdir -p "tap-repo/$(dirname "${TAP_FORMULA_PATH}")"
+          cp "${{ steps.manifest.outputs.formula_file }}" "tap-repo/${TAP_FORMULA_PATH}"
+
+      - name: Check for formula changes
+        if: env.SYNC_MODE == 'full'
+        id: diff
+        timeout-minutes: 2
+        working-directory: tap-repo
+        run: |
+          if git diff --quiet -- "${TAP_FORMULA_PATH}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure git author
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed == 'true'
+        timeout-minutes: 2
+        working-directory: tap-repo
+        run: |
+          git config user.name "claude-code-best-bot"
+          git config user.email "claude-code-best-bot@users.noreply.github.com"
+
+      - name: Reuse or create sync branch
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed == 'true'
+        timeout-minutes: 3
+        working-directory: tap-repo
+        run: |
+          branch="${{ steps.version.outputs.branch }}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "$branch"
+            git checkout -B "$branch" "origin/$branch"
+          else
+            git checkout -b "$branch"
+          fi
+
+      - name: Commit and push formula update
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed == 'true'
+        timeout-minutes: 4
+        working-directory: tap-repo
+        run: |
+          git add "${TAP_FORMULA_PATH}"
+          git commit -m "chore(homebrew): sync claude-code-best to ${{ steps.version.outputs.tag }}"
+          git push --set-upstream origin "${{ steps.version.outputs.branch }}"
+
+      - name: Detect existing pull request
+        if: env.SYNC_MODE != 'summary-only' && (env.SYNC_MODE == 'auto-merge-only' || steps.diff.outputs.changed == 'true')
+        id: existing_pr
+        timeout-minutes: 3
+        working-directory: tap-repo
+        run: |
+          pr_number=$(gh pr list \
+            --repo "${TAP_REPOSITORY}" \
+            --head "${{ steps.version.outputs.branch }}" \
+            --base "${TAP_DEFAULT_BRANCH}" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+          if [ -n "$pr_number" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "number=$pr_number" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed == 'true' && steps.existing_pr.outputs.exists != 'true'
+        id: create_pr
+        timeout-minutes: 4
+        working-directory: tap-repo
+        run: |
+          pr_url=$(gh pr create \
+            --repo "${TAP_REPOSITORY}" \
+            --base "${TAP_DEFAULT_BRANCH}" \
+            --head "${{ steps.version.outputs.branch }}" \
+            --title "Sync claude-code-best to ${{ steps.version.outputs.tag }}" \
+            --body "$(cat <<EOF
+          ## Summary
+          - sync Homebrew formula to ${{ steps.version.outputs.tag }}
+          - update release URLs and SHA256 checksums from the source release
+          - release artifacts: ${{ steps.manifest.outputs.artifacts }}
+          - checksums file: ${{ steps.manifest.outputs.checksums_file }}
+
+          ## Source release
+          - https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}
+          EOF
+          )")
+          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Update existing pull request metadata
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed == 'true' && steps.existing_pr.outputs.exists == 'true'
+        id: update_pr
+        timeout-minutes: 4
+        working-directory: tap-repo
+        run: |
+          gh pr edit "${{ steps.existing_pr.outputs.number }}" \
+            --repo "${TAP_REPOSITORY}" \
+            --title "Sync claude-code-best to ${{ steps.version.outputs.tag }}" \
+            --body "$(cat <<EOF
+          ## Summary
+          - sync Homebrew formula to ${{ steps.version.outputs.tag }}
+          - update release URLs and SHA256 checksums from the source release
+          - release artifacts: ${{ steps.manifest.outputs.artifacts }}
+          - checksums file: ${{ steps.manifest.outputs.checksums_file }}
+
+          ## Source release
+          - https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}
+          EOF
+          )"
+
+      - name: Resolve pull request number
+        if: env.SYNC_MODE != 'summary-only' && (env.SYNC_MODE == 'auto-merge-only' || steps.diff.outputs.changed == 'true')
+        id: pr_number
+        timeout-minutes: 3
+        working-directory: tap-repo
+        run: |
+          pr_number="${{ steps.existing_pr.outputs.number }}"
+          if [ -z "$pr_number" ]; then
+            pr_number=$(gh pr list \
+              --repo "${TAP_REPOSITORY}" \
+              --head "${{ steps.version.outputs.branch }}" \
+              --base "${TAP_DEFAULT_BRANCH}" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty')
+          fi
+          if [ -n "$pr_number" ]; then
+            echo "number=$pr_number" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge for sync pull request
+        if: env.SYNC_MODE != 'summary-only' && steps.pr_number.outputs.number != ''
+        id: auto_merge
+        timeout-minutes: 3
+        working-directory: tap-repo
+        run: |
+          gh pr merge "${{ steps.pr_number.outputs.number }}" \
+            --repo "${TAP_REPOSITORY}" \
+            --auto \
+            --merge
+
+      - name: Write workflow summary
+        if: always()
+        timeout-minutes: 2
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          BRANCH: ${{ steps.version.outputs.branch }}
+          RELEASE_URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}
+          SYNC_MODE: ${{ env.SYNC_MODE }}
+          CHANGED: ${{ steps.diff.outputs.changed }}
+          FORMULA_FILE: ${{ steps.manifest.outputs.formula_file }}
+          ARTIFACTS: ${{ steps.manifest.outputs.artifacts }}
+          CHECKSUMS_FILE: ${{ steps.manifest.outputs.checksums_file }}
+          EXISTING_PR_NUMBER: ${{ steps.existing_pr.outputs.number }}
+          PR_NUMBER: ${{ steps.pr_number.outputs.number }}
+          PR_URL: ${{ steps.create_pr.outputs.url }}
+          CREATE_PR_OUTCOME: ${{ steps.create_pr.outcome }}
+          UPDATE_PR_OUTCOME: ${{ steps.update_pr.outcome }}
+          AUTO_MERGE_OUTCOME: ${{ steps.auto_merge.outcome }}
+          TAP_REPOSITORY: ${{ env.TAP_REPOSITORY }}
+          TAP_DEFAULT_BRANCH: ${{ env.TAP_DEFAULT_BRANCH }}
+        run: |
+          pr_number="${PR_NUMBER:-${EXISTING_PR_NUMBER:-}}"
+          pr_url="${PR_URL}"
+          if [ -z "$pr_url" ] && [ -n "$pr_number" ]; then
+            pr_url="https://github.com/${TAP_REPOSITORY}/pull/${pr_number}"
+          fi
+
+          {
+            echo "## Homebrew tap sync"
+            echo
+            echo "- tag: ${TAG}"
+            echo "- branch: ${BRANCH}"
+            echo "- release url: ${RELEASE_URL}"
+            echo "- sync mode: ${SYNC_MODE}"
+            echo "- changed: ${CHANGED:-unknown}"
+            if [ -n "${FORMULA_FILE}" ]; then
+              echo "- formula source: ${FORMULA_FILE}"
+            fi
+            if [ -n "${ARTIFACTS}" ]; then
+              echo "- release artifacts: ${ARTIFACTS}"
+            fi
+            if [ -n "${CHECKSUMS_FILE}" ]; then
+              echo "- checksums file: ${CHECKSUMS_FILE}"
+            fi
+            if [ -n "$pr_number" ]; then
+              echo "- pull request: #${pr_number}"
+            else
+              echo "- pull request: not resolved"
+            fi
+            if [ -n "$pr_url" ]; then
+              echo "- pull request url: ${pr_url}"
+            fi
+            echo
+
+            if [ "${SYNC_MODE}" = "summary-only" ]; then
+              echo "Summary-only recovery mode completed; no write operations were attempted."
+            elif [ "${SYNC_MODE}" = "auto-merge-only" ] && [ -z "$pr_number" ]; then
+              echo "Auto-merge-only recovery mode could not resolve an open PR for branch ${BRANCH}."
+            elif [ "${CHANGED}" != "true" ] && [ "${SYNC_MODE}" = "full" ]; then
+              echo "Formula unchanged; no PR action was required."
+            elif [ "${CREATE_PR_OUTCOME}" = "failure" ] || [ "${UPDATE_PR_OUTCOME}" = "failure" ] || [ "${AUTO_MERGE_OUTCOME}" = "failure" ]; then
+              echo "### Recovery"
+              echo "- Inspect the failed step in this workflow run."
+              echo "- Verify branch '${BRANCH}' still exists in ${TAP_REPOSITORY}."
+              if [ -n "$pr_url" ]; then
+                echo "- Re-open or continue from ${pr_url}."
+              else
+                echo "- If PR creation failed, open a PR manually from ${BRANCH} to ${TAP_DEFAULT_BRANCH}."
+              fi
+              echo "- After fixing the underlying issue, re-run this workflow for tag ${TAG}."
+            else
+              echo "Sync completed; PR creation/update path succeeded."
+              if [ -n "$pr_url" ]; then
+                echo "Auto-merge status is managed on ${pr_url}."
+              fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: No-op when formula is unchanged
+        if: env.SYNC_MODE == 'full' && steps.diff.outputs.changed != 'true'
+        timeout-minutes: 1
+        run: echo "Formula unchanged; skipping tap PR creation."
