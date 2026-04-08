@@ -1,6 +1,6 @@
 # Homebrew formula template
 
-这个目录保存主仓库内的 Homebrew 分发模板，真正发布时建议同步到独立 tap 仓库：`claude-code-best/homebrew-claude-code-best`。
+这个目录保存主仓库内的 Homebrew 分发模板，真正发布时建议同步到独立 tap 仓库：`Jack-261108/homebrew-claude-code-best`。
 
 ## 发布流程
 
@@ -18,7 +18,7 @@
 ## 所需 secrets / env
 
 - `HOMEBREW_TAP_TOKEN`：对独立 tap 仓库具备 contents / pull requests 写权限的 token
-- `TAP_REPOSITORY`：目标 tap 仓库，例如 `claude-code-best/homebrew-claude-code-best`
+- `TAP_REPOSITORY`：目标 tap 仓库，例如 `Jack-261108/homebrew-claude-code-best`
 - `TAP_DEFAULT_BRANCH`：tap 默认分支，默认 `main`
 - `TAP_FORMULA_PATH`：formula 路径，默认 `Formula/claude-code-best.rb`
 

@@ -59,7 +59,7 @@ DEFAULT_RELEASE_BASE=https://ghproxy.net/https://github.com/microsoft/ripgrep-pr
 安装方式示例：
 
 ```bash
-brew tap claude-code-best/homebrew-claude-code-best
+brew tap Jack-261108/homebrew-claude-code-best
 brew install claude-code-best
 ```
 

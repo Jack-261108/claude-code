@@ -31,7 +31,7 @@ jobs:
       contents: read
 
     env:
-      TAP_REPOSITORY: claude-code-best/homebrew-claude-code-best
+      TAP_REPOSITORY: Jack-261108/homebrew-claude-code-best
       TAP_DEFAULT_BRANCH: main
       TAP_FORMULA_PATH: Formula/claude-code-best.rb
       TAP_BRANCH_PREFIX: sync/claude-code
