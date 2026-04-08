@@ -75,6 +75,27 @@ export type VoiceStreamConnection = {
 
 export type VoiceSttProvider = 'anthropic-oauth' | 'openai'
 
+export const voiceStreamSttInternals = {
+  getAPIProvider,
+  isAnthropicAuthEnabled,
+  getClaudeAIOAuthTokens,
+  getOpenAIApiKey: () => process.env.OPENAI_API_KEY ?? '',
+  getOpenAIBaseURL: () => process.env.OPENAI_BASE_URL,
+  getOpenAITranscriptionModel: () =>
+    process.env.OPENAI_TRANSCRIPTION_MODEL ||
+    process.env.OPENAI_MODEL ||
+    'gpt-4o-mini-transcribe',
+  createOpenAIClient: (config: { apiKey: string; baseURL: string | undefined }) =>
+    new OpenAI({
+      apiKey: config.apiKey,
+      ...(config.baseURL && { baseURL: config.baseURL }),
+      maxRetries: 0,
+      timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+      dangerouslyAllowBrowser: true,
+    }),
+  toUploadFile: toFile,
+}
+
 // The voice_stream endpoint returns transcript chunks and endpoint markers.
 type VoiceStreamTranscriptText = {
   type: 'TranscriptText'
@@ -100,14 +121,14 @@ type VoiceStreamMessage =
 // ─── Availability ──────────────────────────────────────────────────────
 
 export function getVoiceSttProvider(): VoiceSttProvider | null {
-  const provider = getAPIProvider()
-  if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+  const provider = voiceStreamSttInternals.getAPIProvider()
+  if (provider === 'openai' && voiceStreamSttInternals.getOpenAIApiKey()) {
     return 'openai'
   }
 
   try {
-    if (isAnthropicAuthEnabled()) {
-      const tokens = getClaudeAIOAuthTokens()
+    if (voiceStreamSttInternals.isAnthropicAuthEnabled()) {
+      const tokens = voiceStreamSttInternals.getClaudeAIOAuthTokens()
       if (tokens !== null && tokens.accessToken !== null) {
         return 'anthropic-oauth'
       }
@@ -142,12 +163,9 @@ function getVoiceOpenAIConfig(): {
   model: string
 } {
   return {
-    apiKey: process.env.OPENAI_API_KEY ?? '',
-    baseURL: process.env.OPENAI_BASE_URL,
-    model:
-      process.env.OPENAI_TRANSCRIPTION_MODEL ||
-      process.env.OPENAI_MODEL ||
-      'gpt-4o-mini-transcribe',
+    apiKey: voiceStreamSttInternals.getOpenAIApiKey(),
+    baseURL: voiceStreamSttInternals.getOpenAIBaseURL(),
+    model: voiceStreamSttInternals.getOpenAITranscriptionModel(),
   }
 }
 
@@ -202,16 +220,13 @@ function createOpenAITranscriptionConnection(
       try {
         const { apiKey, baseURL, model } = getVoiceOpenAIConfig()
 
-        const client = new OpenAI({
+        const client = voiceStreamSttInternals.createOpenAIClient({
           apiKey,
-          ...(baseURL && { baseURL }),
-          maxRetries: 0,
-          timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
-          dangerouslyAllowBrowser: true,
+          baseURL,
         })
 
         const audio = encodePcm16LeAsWav(Buffer.concat(chunks))
-        const file = await toFile(audio, 'voice-input.wav', {
+        const file = await voiceStreamSttInternals.toUploadFile(audio, 'voice-input.wav', {
           type: 'audio/wav',
         })
         const transcription = await client.audio.transcriptions.create({

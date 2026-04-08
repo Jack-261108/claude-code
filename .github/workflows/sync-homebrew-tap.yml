@@ -49,9 +49,11 @@ jobs:
         run: |
           tag="${{ github.event.inputs.release_tag || github.event.release.tag_name || github.ref_name }}"
           version="${tag#v}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "branch=${TAP_BRANCH_PREFIX}/${tag}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "branch=${TAP_BRANCH_PREFIX}/${tag}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download release manifest
         if: env.SYNC_MODE == 'full'
@@ -255,7 +257,8 @@ jobs:
           TAP_DEFAULT_BRANCH: ${{ env.TAP_DEFAULT_BRANCH }}
         run: |
           pr_number="${PR_NUMBER:-${EXISTING_PR_NUMBER:-}}"
-          pr_url="${PR_URL}"
+          workflow_pr_url="${PR_URL:-}"
+          pr_url="$workflow_pr_url"
           if [ -z "$pr_url" ] && [ -n "$pr_number" ]; then
             pr_url="https://github.com/${TAP_REPOSITORY}/pull/${pr_number}"
           fi

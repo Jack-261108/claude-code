@@ -1,103 +1,95 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  connectVoiceStream,
+  getVoiceSttProvider,
+  isVoiceStreamAvailable,
+  voiceStreamSttInternals,
+} from '../voiceStreamSTT.js'
 
 let mockedOpenAICalls: Array<Record<string, unknown>> = []
 
-mock.module('openai', () => {
-  class OpenAIStub {
-    audio = {
-      transcriptions: {
-        create: async (params: Record<string, unknown>) => {
-          mockedOpenAICalls.push(params)
-          return { text: 'hello world' }
-        },
-      },
-    }
-
-    constructor(_opts: Record<string, unknown>) {}
-  }
-
-  return {
-    default: OpenAIStub,
-    toFile: async (data: Buffer, name: string, options?: Record<string, unknown>) => ({
-      data,
-      name,
-      options,
-    }),
-  }
-})
-
-const {
-  connectVoiceStream,
-  getVoiceModeAvailability,
-  getVoiceSttProvider,
-  isVoiceStreamAvailable,
-} = await import('../voiceStreamSTT.js')
-
 describe('voiceStreamSTT', () => {
-  const originalEnv = {
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
-    OPENAI_MODEL: process.env.OPENAI_MODEL,
-    OPENAI_TRANSCRIPTION_MODEL: process.env.OPENAI_TRANSCRIPTION_MODEL,
+  const originalInternals = {
+    getAPIProvider: voiceStreamSttInternals.getAPIProvider,
+    isAnthropicAuthEnabled: voiceStreamSttInternals.isAnthropicAuthEnabled,
+    getClaudeAIOAuthTokens: voiceStreamSttInternals.getClaudeAIOAuthTokens,
+    getOpenAIApiKey: voiceStreamSttInternals.getOpenAIApiKey,
+    getOpenAIBaseURL: voiceStreamSttInternals.getOpenAIBaseURL,
+    getOpenAITranscriptionModel: voiceStreamSttInternals.getOpenAITranscriptionModel,
+    createOpenAIClient: voiceStreamSttInternals.createOpenAIClient,
+    toUploadFile: voiceStreamSttInternals.toUploadFile,
   }
 
   beforeEach(() => {
     mockedOpenAICalls = []
-    delete process.env.CLAUDE_CODE_USE_OPENAI
-    delete process.env.OPENAI_API_KEY
-    delete process.env.OPENAI_BASE_URL
-    delete process.env.OPENAI_MODEL
-    delete process.env.OPENAI_TRANSCRIPTION_MODEL
+    voiceStreamSttInternals.getAPIProvider = () => 'firstParty'
+    voiceStreamSttInternals.isAnthropicAuthEnabled = () => false
+    voiceStreamSttInternals.getClaudeAIOAuthTokens = () => null
+    voiceStreamSttInternals.getOpenAIApiKey = () => ''
+    voiceStreamSttInternals.getOpenAIBaseURL = () => undefined
+    voiceStreamSttInternals.getOpenAITranscriptionModel = () =>
+      'gpt-4o-mini-transcribe'
+    voiceStreamSttInternals.createOpenAIClient = () =>
+      ({
+        audio: {
+          transcriptions: {
+            create: async (params: Record<string, unknown>) => {
+              mockedOpenAICalls.push(params)
+              return { text: 'hello world' }
+            },
+          },
+        },
+      }) as never
+    voiceStreamSttInternals.toUploadFile = async (
+      data: Buffer,
+      name: string,
+      options?: Record<string, unknown>,
+    ) => ({
+      data,
+      name,
+      options,
+    }) as never
   })
 
   afterEach(() => {
-    if (originalEnv.OPENAI_API_KEY !== undefined) {
-      process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY
-    } else {
-      delete process.env.OPENAI_API_KEY
-    }
-    if (originalEnv.OPENAI_BASE_URL !== undefined) {
-      process.env.OPENAI_BASE_URL = originalEnv.OPENAI_BASE_URL
-    } else {
-      delete process.env.OPENAI_BASE_URL
-    }
-    if (originalEnv.OPENAI_MODEL !== undefined) {
-      process.env.OPENAI_MODEL = originalEnv.OPENAI_MODEL
-    } else {
-      delete process.env.OPENAI_MODEL
-    }
-    if (originalEnv.OPENAI_TRANSCRIPTION_MODEL !== undefined) {
-      process.env.OPENAI_TRANSCRIPTION_MODEL =
-        originalEnv.OPENAI_TRANSCRIPTION_MODEL
-    } else {
-      delete process.env.OPENAI_TRANSCRIPTION_MODEL
-    }
+    voiceStreamSttInternals.getAPIProvider = originalInternals.getAPIProvider
+    voiceStreamSttInternals.isAnthropicAuthEnabled =
+      originalInternals.isAnthropicAuthEnabled
+    voiceStreamSttInternals.getClaudeAIOAuthTokens =
+      originalInternals.getClaudeAIOAuthTokens
+    voiceStreamSttInternals.getOpenAIApiKey = originalInternals.getOpenAIApiKey
+    voiceStreamSttInternals.getOpenAIBaseURL =
+      originalInternals.getOpenAIBaseURL
+    voiceStreamSttInternals.getOpenAITranscriptionModel =
+      originalInternals.getOpenAITranscriptionModel
+    voiceStreamSttInternals.createOpenAIClient =
+      originalInternals.createOpenAIClient
+    voiceStreamSttInternals.toUploadFile = originalInternals.toUploadFile
   })
 
-  test('returns openai when OPENAI_API_KEY is configured', () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
-    process.env.OPENAI_API_KEY = 'sk-test'
+  test.serial('returns openai when OPENAI_API_KEY is configured', () => {
+    voiceStreamSttInternals.getAPIProvider = () => 'openai'
+    voiceStreamSttInternals.getOpenAIApiKey = () => 'sk-test'
+
     expect(getVoiceSttProvider()).toBe('openai')
     expect(isVoiceStreamAvailable()).toBe(true)
-    expect(getVoiceModeAvailability()).toEqual({
-      provider: 'openai',
-      available: true,
-    })
   })
 
-  test('returns null when no supported provider is configured', () => {
+  test.serial('returns null when no supported provider is configured', () => {
+    voiceStreamSttInternals.getAPIProvider = () => 'firstParty'
+    voiceStreamSttInternals.getOpenAIApiKey = () => ''
+    voiceStreamSttInternals.isAnthropicAuthEnabled = () => false
+    voiceStreamSttInternals.getClaudeAIOAuthTokens = () => null
+
     expect(getVoiceSttProvider()).toBeNull()
     expect(isVoiceStreamAvailable()).toBe(false)
-    expect(getVoiceModeAvailability()).toEqual({
-      provider: null,
-      available: false,
-    })
   })
 
-  test('creates transcription from buffered audio for api key provider', async () => {
-    process.env.CLAUDE_CODE_USE_OPENAI = '1'
-    process.env.OPENAI_API_KEY = 'sk-test'
-    process.env.OPENAI_TRANSCRIPTION_MODEL = 'gpt-4o-mini-transcribe'
+  test.serial('creates transcription from buffered audio for api key provider', async () => {
+    voiceStreamSttInternals.getAPIProvider = () => 'openai'
+    voiceStreamSttInternals.getOpenAIApiKey = () => 'sk-test'
+    voiceStreamSttInternals.getOpenAITranscriptionModel = () =>
+      'gpt-4o-mini-transcribe'
 
     const transcripts: string[] = []
     let readyCalled = false

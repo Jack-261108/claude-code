@@ -1,9 +1,36 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { formatBriefTimestamp } from "../formatBriefTimestamp";
 
 describe("formatBriefTimestamp", () => {
   // Fixed "now" for deterministic tests: 2026-04-02T14:00:00Z (Thursday)
   const now = new Date("2026-04-02T14:00:00Z");
+  const originalLcAll = process.env.LC_ALL;
+  const originalLcTime = process.env.LC_TIME;
+  const originalLang = process.env.LANG;
+
+  beforeEach(() => {
+    process.env.LC_ALL = "en_US.UTF-8";
+    process.env.LC_TIME = "en_US.UTF-8";
+    process.env.LANG = "en_US.UTF-8";
+  });
+
+  afterEach(() => {
+    if (originalLcAll !== undefined) {
+      process.env.LC_ALL = originalLcAll;
+    } else {
+      delete process.env.LC_ALL;
+    }
+    if (originalLcTime !== undefined) {
+      process.env.LC_TIME = originalLcTime;
+    } else {
+      delete process.env.LC_TIME;
+    }
+    if (originalLang !== undefined) {
+      process.env.LANG = originalLang;
+    } else {
+      delete process.env.LANG;
+    }
+  });
 
   test("same day timestamp returns time only (contains colon)", () => {
     const result = formatBriefTimestamp("2026-04-02T10:30:00Z", now);

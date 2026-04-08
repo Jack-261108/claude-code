@@ -15,17 +15,38 @@ describe('getGrokClient', () => {
     process.env = { ...originalEnv }
   })
 
-  test('creates client with default base URL', () => {
-    const client = getGrokClient()
+  test('creates client with default base URL', async () => {
+    let requestedUrl = ''
+    const client = getGrokClient({
+      fetchOverride: async input => {
+        requestedUrl = String(input)
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
     expect(client).toBeDefined()
-    expect(client.baseURL).toBe('https://api.x.ai/v1')
+
+    await client.models.list()
+    expect(requestedUrl).toStartWith('https://api.x.ai/v1/models')
   })
 
-  test('uses GROK_BASE_URL when set', () => {
+  test('uses GROK_BASE_URL when set', async () => {
     process.env.GROK_BASE_URL = 'https://custom.grok.api/v1'
-    clearGrokClientCache()
-    const client = getGrokClient()
-    expect(client.baseURL).toBe('https://custom.grok.api/v1')
+    let requestedUrl = ''
+    const client = getGrokClient({
+      fetchOverride: async input => {
+        requestedUrl = String(input)
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
+
+    await client.models.list()
+    expect(requestedUrl).toStartWith('https://custom.grok.api/v1/models')
   })
 
   test('returns cached client on second call', () => {
