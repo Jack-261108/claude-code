@@ -1,16 +1,16 @@
 class ClaudeCodeBest < Formula
   desc "Reverse-engineered Anthropic Claude Code CLI"
   homepage "https://github.com/claude-code-best/claude-code"
-  version "1.1.0"
+  version "2.1.888"
   depends_on "bun"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/claude-code-best/claude-code/releases/download/v1.1.0/ccb-v1.1.0-darwin-arm64.tar.gz"
-      sha256 "ced8a5031c1feaee92ea409ed12ea90879c1c4290820af9895a0971d71a5982f"
+      url "https://github.com/claude-code-best/claude-code/releases/download/v2.1.888/ccb-v2.1.888-darwin-arm64.tar.gz"
+      sha256 "f471c767dd17f0cd6650c1ab5c6e0e528324fbd03de26b2bb43545dd1e328be0"
     else
-      url "https://github.com/claude-code-best/claude-code/releases/download/v1.1.0/ccb-v1.1.0-darwin-x64.tar.gz"
-      sha256 "617e33cdb22b2d49466de0f12cc19ed6b7ba271652c3df0f0f9b8b87b93624b8"
+      url "https://github.com/claude-code-best/claude-code/releases/download/v2.1.888/ccb-v2.1.888-darwin-x64.tar.gz"
+      sha256 "be2ab16e427538a299066fef73c9fc777b64be8797c4085d0179e826952aeec0"
     end
   end
 
