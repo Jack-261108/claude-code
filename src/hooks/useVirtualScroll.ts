@@ -536,14 +536,16 @@ export function useVirtualScroll(
   // to scroll distance). Trim the far edge — by viewport position — to keep
   // fiber count O(viewport) regardless of deferred-value scheduling.
   if (effEnd - effStart > MAX_MOUNTED_ITEMS) {
-    // Trim side is decided by viewport POSITION, not pendingDelta direction.
-    // pendingDelta drains to 0 between frames while dStart/dEnd lag under
-    // concurrent scheduling; a direction-based trim then flips from "trim
-    // tail" to "trim head" mid-settle, bumping effStart → effTopSpacer →
-    // clampMin → setClampBounds yanks scrollTop down → scrollback vanishes.
-    // Position-based: keep whichever end the viewport is closer to.
+    // Trim side is decided by the VIEWPORT'S TARGET position, not by the
+    // drained scrollTop or pendingDelta direction. During long-scroll bursts,
+    // committed scrollTop lags while dStart/dEnd can still be deferred; using
+    // the stale committed position can flip the trim side mid-settle,
+    // bumping effStart → effTopSpacer → clampMin and yanking the viewport.
+    // Use scrollTop+pendingDelta so trim stays aligned with where the
+    // renderer is actually headed.
     const mid = (offsets[effStart]! + offsets[effEnd]!) / 2
-    if (scrollTop - listOriginRef.current < mid) {
+    const viewportTop = Math.max(0, scrollTop + pendingDelta) - listOriginRef.current
+    if (viewportTop < mid) {
       effEnd = effStart + MAX_MOUNTED_ITEMS
     } else {
       effStart = effEnd - MAX_MOUNTED_ITEMS

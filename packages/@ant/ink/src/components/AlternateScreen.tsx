@@ -60,17 +60,17 @@ export function AlternateScreen({
     const ink = instances.get(process.stdout)
     if (!writeRaw) return
 
+    ink?.setAltScreenActive(true, mouseTracking)
     writeRaw(
       ENTER_ALT_SCREEN +
         '\x1b[2J\x1b[H' +
         (mouseTracking ? ENABLE_MOUSE_TRACKING : ''),
     )
-    ink?.setAltScreenActive(true, mouseTracking)
 
     return () => {
-      ink?.setAltScreenActive(false)
       ink?.clearTextSelection()
       writeRaw((mouseTracking ? DISABLE_MOUSE_TRACKING : '') + EXIT_ALT_SCREEN)
+      ink?.setAltScreenActive(false)
     }
   }, [writeRaw, mouseTracking])
 

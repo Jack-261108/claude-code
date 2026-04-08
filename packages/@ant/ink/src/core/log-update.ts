@@ -144,6 +144,13 @@ export class LogUpdate {
       next.viewport.height < prev.viewport.height ||
       (prev.viewport.width !== 0 && next.viewport.width !== prev.viewport.width)
     ) {
+      // Alt-screen resize already requests an atomic erase+home in ink.tsx via
+      // needsEraseBeforePaint. Returning a clearTerminal patch here would stack
+      // a second full clear on top of that path and produce an avoidable blank
+      // frame on some terminals while resizing.
+      if (altScreen) {
+        return renderFrameFromOrigin(next, stylePool)
+      }
       return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool)
     }
 
@@ -501,6 +508,12 @@ function readLine(screen: Screen, y: number): string {
   return line.trimEnd()
 }
 
+function renderFrameFromOrigin(frame: Frame, stylePool: StylePool): Diff {
+  const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
+  renderFrame(screen, frame, stylePool)
+  return screen.diff
+}
+
 function fullResetSequence_CAUSES_FLICKER(
   frame: Frame,
   reason: FlickerReason,
@@ -508,9 +521,7 @@ function fullResetSequence_CAUSES_FLICKER(
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
   // After clearTerminal, cursor is at (0, 0)
-  const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
-  renderFrame(screen, frame, stylePool)
-  return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
+  return [{ type: 'clearTerminal', reason, debug }, ...renderFrameFromOrigin(frame, stylePool)]
 }
 
 function renderFrame(
